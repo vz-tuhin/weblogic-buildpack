@@ -43,7 +43,7 @@ module JavaBuildpack
       tags = tag_detection('container', @containers, true)
       tags.concat tag_detection('JRE', @jres, true) unless tags.empty?
       tags.concat tag_detection('framework', @frameworks, false) unless tags.empty?
-      tags << "java-buildpack=#{@buildpack_version.to_s false}" unless tags.empty?
+      tags << "weblogic-buildpack=#{@buildpack_version.to_s false}" unless tags.empty?
       tags = tags.flatten.compact.sort
 
       @logger.debug { "Detection Tags: #{tags}" }
@@ -91,7 +91,7 @@ module JavaBuildpack
 
     private
 
-    BUILDPACK_MESSAGE = '-----> Java Buildpack Version: %s'.freeze
+    BUILDPACK_MESSAGE = '-----> WebLogic Buildpack Version: %s'.freeze
 
     LOAD_ROOT = (Pathname.new(__FILE__).dirname + '..').freeze
 
