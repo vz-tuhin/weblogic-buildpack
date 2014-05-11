@@ -77,7 +77,7 @@ module JavaBuildpack::Container
     # @macro base_component_compile
     def compile
 
-      download_wls
+      download_and_install_wls
       configure
       link_to(@application.root.children, root)
       #@droplet.additional_libraries.link_to web_inf_lib
@@ -146,12 +146,22 @@ module JavaBuildpack::Container
     WLS_PRE_JARS_CACHE_DIR      = 'preJars'.freeze
     WLS_POST_JARS_CACHE_DIR     = 'postJars'.freeze
 
+    # Files required for installing from a jar in silent mode
+    ORA_INSTALL_INVENTORY_FILE  = 'oraInst.loc'.freeze
+    WLS_INSTALL_RESPONSE_FILE   = 'installResponseFile'.freeze
+
+    # keyword to change to point to actual wlsInstall in response file
+    WLS_INSTALL_PATH_TEMPLATE   = 'WEBLOGIC_INSTALL_PATH'.freeze
+    WLS_ORA_INVENTORY_TEMPLATE  = 'ORACLE_INVENTORY_INSTALL_PATH'.freeze
+    WLS_ORA_INV_INSTALL_PATH    = '/tmp/wlsOraInstallInventory'.freeze
+
     # Parent Location to save/store the application during deployment
     DOMAIN_APPS_FOLDER             = 'apps'.freeze
 
     WLS_SERVER_START_SCRIPT     = 'startWebLogic.sh'.freeze
     WLS_COMMON_ENV_SCRIPT       = 'commEnv.sh'.freeze
     WLS_CONFIGURE_SCRIPT        = 'configure.sh'.freeze
+    WLS_HOME_DIR                = 'wlserver'.freeze
 
     WLS_SERVER_START_TOKEN      = '\${DOMAIN_HOME}/bin/startWebLogic.sh \$*'.freeze
     SETUP_ENV_AND_LINKS_SCRIPT  = 'setupPathsAndEnv.sh'.freeze
@@ -365,55 +375,47 @@ module JavaBuildpack::Container
       @application.children.each { |child| FileUtils.cp_r child, root }
     end
 
-    def expand(file)
+    def install(inputFile)
       expand_start_time = Time.now
 
-      print "-----> Expanding WebLogic to #{@droplet.sandbox.relative_path_from(@droplet.root)}\n"
 
       FileUtils.rm_rf @wlsSandboxRoot
       FileUtils.mkdir_p @wlsSandboxRoot
 
-      system "/usr/bin/unzip #{file.path} -d #{@wlsSandboxRoot} >/dev/null"
+      inputFilePath = File::absolute_path(inputFile.path)
+
+      print "-----> Installing WebLogic to #{@droplet.sandbox.relative_path_from(@droplet.root)} using downloaded file: #{inputFilePath}\n"
+
+      if inputFilePath[/\.zip/]
+        installUsingZip(inputFilePath)
+      else
+        installUsingJarOrBinary(inputFilePath)
+      end
 
       puts "(#{(Time.now - expand_start_time).duration})"
     end
 
-    def configure()
-      configure_start_time = Time.now
+    def installUsingZip(zipFile)
 
-      print "-----> Configuring WebLogic under #{@wlsSandboxRoot.relative_path_from(@droplet.root)}\n"
+      print "       Expanding WebLogic from downloaded zip file: #{zipFile}\n"
+      logger.debug { "Expanding WebLogic from downloaded zip file: #{zipFile}" }
+
+      system "/usr/bin/unzip #{zipFile} -d #{@wlsSandboxRoot} >/dev/null"
 
 
       javaBinary      = Dir.glob("#{@wlsSandboxRoot}" + "/../**/" + JAVA_BINARY)[0]
       configureScript = Dir.glob("#{@wlsSandboxRoot}" + "/**/" + WLS_CONFIGURE_SCRIPT)[0]
 
-      logger.debug { "Java Binary is located at : #{javaBinary}" }
-      logger.debug { "WLS configure script is located at : #{configureScript}" }
-      logger.debug { "Application is located at : #{@application.root}" }
-
       @javaHome = File.dirname(javaBinary) + "/.."
       @wlsInstall = File.dirname(configureScript)
-      @wlsHome = Dir.glob("#{@wlsInstall}/wlserver*")[0].to_s
+      @wlsHome = Dir.glob("#{@wlsInstall}/**/weblogic.jar")[0].to_s + "../.."
 
-      # Now add or update the Domain path and Wls Home inside the wlsDomainYamlConfigFile
-      updateDomainConfigFile(@wlsDomainYamlConfigFile)
-
-      logger.debug { "Configurations for Java WLS Buildpack" }
-      logger.debug { "--------------------------------------" }
-      logger.debug { "  Sandbox Root  : #{@wlsSandboxRoot} " }
-      logger.debug { "  JAVA_HOME     : #{@javaHome} " }
-      logger.debug { "  WLS_INSTALL   : #{@wlsInstall} "}
-      logger.debug { "  WLS_HOME      : #{@wlsHome}" }
-      logger.debug { "  DOMAIN HOME   : #{@domainHome}" }
-      logger.debug { "--------------------------------------" }
-
-
-      system "/bin/chmod +x #{configureScript}"
+       system "/bin/chmod +x #{configureScript}"
 
       # Run configure.sh so the actual files are unpacked fully and paths are configured correctly
       # Need to use pipeline as we need to provide inputs to scripts downstream
 
-      logger.debug { "Running configure script!!" }
+      logger.debug { "Running wls config script!!" }
 
       # Use this while running on Mac to pick the correct JDK location
       if mac?
@@ -438,11 +440,182 @@ module JavaBuildpack::Container
       print "       Starting WebLogic Install\n"
       logger.debug { "Starting WebLogic Install" }
 
-      system "export JAVA_HOME=#{@javaHome}; echo no |  #{configureScript} > #{@wlsInstall}/configureRun.log"
-      logger.debug { "Finished running configure script, output saved at #{@wlsInstall}/configureRun.log" }
+      system "export JAVA_HOME=#{@javaHome}; echo no |  #{configureScript} > #{@wlsSandboxRoot}/install.log"
+      logger.debug { "Finished running install, output saved at: #{@wlsSandboxRoot}/install.log" }
+
+    end
+
+    def installUsingJarOrBinary(installBinaryFile)
+
+      print "      Installing WebLogic from Jar or Binary file in silent mode\n"
+      logger.debug { "Installing WebLogic from Jar or Binary file in silent mode" }
+
+      javaBinary      = Dir.glob("#{@wlsSandboxRoot}" + "/../**/" + JAVA_BINARY)[0]
+      @javaHome = File.dirname(javaBinary) + "/.."
+
+      oraInstallInventorySrc    = @buildpackConfigCacheRoot + ORA_INSTALL_INVENTORY_FILE
+      oraInstallInventoryTarget    = "/tmp/" + ORA_INSTALL_INVENTORY_FILE
+
+      wlsInstallResponseFileSrc    = @buildpackConfigCacheRoot + WLS_INSTALL_RESPONSE_FILE
+      wlsInstallResponseFileTarget = "/tmp/" + WLS_INSTALL_RESPONSE_FILE
+
+      # Unfortunately the jar install of weblogic does not like hidden directories in its install path like .java-buildpack
+      ## [VALIDATION] [ERROR]:INST-07004: Oracle Home location contains one or more invalid characters
+      ## [VALIDATION] [SUGGESTION]:The directory name may only contain alphanumeric, underscore (_), hyphen (-) , or dot (.) characters, and it must begin with an alphanumeric character.
+      ## Provide a different directory name.
+      ## installation Failed. Exiting installation due to data validation failure.
+      ## The Oracle Universal Installer failed.  Exiting.
+      # So, the <APP>/.java-buildpack/weblogic/wlsInstall path wont work here
+      # Have to create the wlsInstall outside of the .java-buildpack, parallel to the app location.
+      @wlsInstall = File::absolute_path("#{@wlsSandboxRoot}/../../../wlsInstall")
+
+      puts "       Warning!!! Going to install at WebLogic at : #{@wlsInstall}, would be removing old installs as well as previous oracle inventory"
+      logger.debug { "Warning!!! Going to install at WebLogic at : #{@wlsInstall}, would be removing old installs as well as previous oracle inventory" }
+
+      system "rm -rf #{WLS_ORA_INV_INSTALL_PATH}"
+      system "rm -rf #{@wlsInstall}"
+      system "/bin/cp #{oraInstallInventorySrc} /tmp"
+      system "/bin/cp #{wlsInstallResponseFileSrc} /tmp;"
+
+      original = File.open(wlsInstallResponseFileTarget, 'r') { |f| f.read }
+      modified = original.gsub(/#{WLS_INSTALL_PATH_TEMPLATE}/, @wlsInstall )
+      File.open(wlsInstallResponseFileTarget, 'w') { |f| f.write modified }
+
+      original = File.open(oraInstallInventoryTarget, 'r') { |f| f.read }
+      modified = original.gsub(/#{WLS_ORA_INVENTORY_TEMPLATE}/, WLS_ORA_INV_INSTALL_PATH )
+      File.open(oraInstallInventoryTarget, 'w') { |f| f.write modified }
+
+
+      # Use this while running on Mac to pick the correct JDK location
+      if mac?
+
+        print "       Warning!!! Running on Mac, cannot use linux java binaries downloaded earlier...!!\n"
+        print "       Trying to find local java instance on Mac\n"
+
+        logger.debug { "Warning!!! Running on Mac, cannot use linux java binaries downloaded earlier...!!" }
+        logger.debug { "Trying to find local java instance on Mac" }
+
+        javaBinaryLocations = Dir.glob("/Library/Java/JavaVirtualMachines/**/" + JAVA_BINARY)
+        javaBinaryLocations.each { |javaBinaryCandidate|
+
+          # The full installs have $JAVA_HOME/jre/bin/java path
+          @javaHome =  File.dirname(javaBinaryCandidate) + "/.." if javaBinaryCandidate[/jdk1.7/]
+        }
+        print "       Warning!!! Using JAVA_HOME at #{@javaHome} \n"
+        logger.debug { "Warning!!! Using JAVA_HOME at #{@javaHome}" }
+
+        javaBinary = "#{@javaHome}/bin/java"
+
+      end
+
+      # There appears to be a problem running the java -jar on the cached jar file with java being unable to get to the manifest correctly for some strange reason
+      # Seems to fail with file name http:%2F%2F12.1.1.1:7777%2Ffileserver%2Fwls%2Fwls_121200.jar.cached but works fine if its foo.jar or anything simpler.
+      # So, create a temporary link to the jar with a simpler name and then run the install..
+
+      if (installBinaryFile[/\.jar/])
+        newBinaryPath="/tmp/wls_tmp_installer.jar"
+        installCommand = "export JAVA_HOME=#{@javaHome}; rm #{newBinaryPath}; ln -s #{installBinaryFile} #{newBinaryPath}; mkdir #{@wlsInstall}; #{javaBinary} -Djava.security.egd=file:/dev/./urandom -jar #{newBinaryPath} -silent -responseFile #{wlsInstallResponseFileTarget} -invPtrLoc #{oraInstallInventoryTarget}"
+      else
+        newBinaryPath="/tmp/wls_tmp_installer.bin"
+        installCommand = "export JAVA_HOME=#{@javaHome}; rm #{newBinaryPath}; ln -s #{installBinaryFile} #{newBinaryPath}; mkdir #{@wlsInstall}; chmod +x #{newBinaryPath}; #{newBinaryPath} -J-Djava.security.egd=file:/dev/./urandom -silent -responseFile #{wlsInstallResponseFileTarget} -invPtrLoc #{oraInstallInventoryTarget}"
+      end
+
+      print "       Starting WebLogic Install with command:  #{installCommand}\n"
+      logger.debug { "Starting WebLogic Install with command:  #{installCommand}" }
+
+      system "#{installCommand} > #{@wlsSandboxRoot}/install.log"
+      logger.debug { "Finished running install, output saved at: #{@wlsSandboxRoot}/install.log" }
+
+
+    end
+
+    def configure()
+      configure_start_time = Time.now
+
+      print "-----> Configuring WebLogic domain under #{@wlsSandboxRoot.relative_path_from(@droplet.root)}\n"
+
+      @wlsHome = File.dirname(Dir.glob("#{@wlsInstall}/**/weblogic.jar")[0]) + "/../.."
+      if (@wlsHome.nil?)
+        logger.debug { "Problem with install, check captured install log output at #{@wlsInstall}/install.log" }
+        print " Problem with install, check captured install log output at #{@wlsInstall}/install.log"
+      end
+
+
+      #javaBinary      = Dir.glob("#{@wlsSandboxRoot}" + "/../**/" + JAVA_BINARY)[0]
+      #configureScript = Dir.glob("#{@wlsSandboxRoot}" + "/**/" + WLS_CONFIGURE_SCRIPT)[0]
+      #
+      #logger.debug { "Java Binary is located at : #{javaBinary}" }
+      #logger.debug { "WLS configure script is located at : #{configureScript}" }
+      #logger.debug { "Application is located at : #{@application.root}" }
+      #
+      #@javaHome = File.dirname(javaBinary) + "/.."
+      #@wlsInstall = File.dirname(configureScript)
+      #@wlsHome = Dir.glob("#{@wlsInstall}/wlserver*")[0].to_s
+      #
+      ## Now add or update the Domain path and Wls Home inside the wlsDomainYamlConfigFile
+      #updateDomainConfigFile(@wlsDomainYamlConfigFile)
+      #
+      #logger.debug { "Configurations for Java WLS Buildpack" }
+      #logger.debug { "--------------------------------------" }
+      #logger.debug { "  Sandbox Root  : #{@wlsSandboxRoot} " }
+      #logger.debug { "  JAVA_HOME     : #{@javaHome} " }
+      #logger.debug { "  WLS_INSTALL   : #{@wlsInstall} "}
+      #logger.debug { "  WLS_HOME      : #{@wlsHome}" }
+      #logger.debug { "  DOMAIN HOME   : #{@domainHome}" }
+      #logger.debug { "--------------------------------------" }
+      #
+      #
+      #system "/bin/chmod +x #{configureScript}"
+      #
+      ## Run configure.sh so the actual files are unpacked fully and paths are configured correctly
+      ## Need to use pipeline as we need to provide inputs to scripts downstream
+      #
+      #logger.debug { "Running configure script!!" }
+      #
+      ## Use this while running on Mac to pick the correct JDK location
+      #if mac?
+      #
+      #  print "       Warning!!! Running on Mac, cannot use linux java binaries downloaded earlier...!!\n"
+      #  print "       Trying to find local java instance on Mac\n"
+      #
+      #  logger.debug { "Warning!!! Running on Mac, cannot use linux java binaries downloaded earlier...!!" }
+      #  logger.debug { "Trying to find local java instance on Mac" }
+      #
+      #  javaBinaryLocations = Dir.glob("/Library/Java/JavaVirtualMachines/**/" + JAVA_BINARY)
+      #  javaBinaryLocations.each { |javaBinaryCandidate|
+      #
+      #    # The full installs have $JAVA_HOME/jre/bin/java path
+      #    @javaHome =  File.dirname(javaBinaryCandidate) + "/.." if javaBinaryCandidate[/jdk1.7/]
+      #  }
+      #  print "       Warning!!! Using JAVA_HOME at #{@javaHome} \n"
+      #  logger.debug { "Warning!!! Using JAVA_HOME at #{@javaHome}" }
+      #
+      #end
+      #
+      #print "       Starting WebLogic Install\n"
+      #logger.debug { "Starting WebLogic Install" }
+      #
+      #system "export JAVA_HOME=#{@javaHome}; echo no |  #{configureScript} > #{@wlsInstall}/configureRun.log"
+      #logger.debug { "Finished running configure script, output saved at #{@wlsInstall}/configureRun.log" }
 
       # Modify WLS commEnv Script to use -server rather than -client
       modifyJvmTypeInCommEnv()
+
+      logger.debug { "WebLogic install is located at : #{@wlsInstall}" }
+      logger.debug { "Application is located at : #{@application.root}" }
+
+      # Now add or update the Domain path and Wls Home inside the wlsDomainYamlConfigFile
+      updateDomainConfigFile(@wlsDomainYamlConfigFile)
+      updateDomainConfigFile(@wlsDomainYamlConfigFile)
+
+      logger.debug { "Configurations for Java WLS Buildpack" }
+      logger.debug { "--------------------------------------" }
+      logger.debug { "  Sandbox Root  : #{@wlsSandboxRoot} " }
+      logger.debug { "  JAVA_HOME     : #{@javaHome} " }
+      logger.debug { "  WLS_INSTALL   : #{@wlsInstall} "}
+      logger.debug { "  WLS_HOME      : #{@wlsHome}" }
+      logger.debug { "  DOMAIN HOME   : #{@domainHome}" }
+      logger.debug { "--------------------------------------" }
 
 
       # Determine the configs that should be used to drive the domain creation.
@@ -450,6 +623,7 @@ module JavaBuildpack::Container
       # The JVM and Domain configs of the App would always be used for domain/server names and startup arguments
       configCacheRoot = determineConfigCacheLocation
 
+      # Consolidate all the user defined service definitions provided via the app,
       # Consolidate all the user defined service definitions provided via the app,
       # along with anything else that comes via the Service Bindings via the environment (VCAP_SERVICES) during staging/execution of the droplet.
 
@@ -476,14 +650,14 @@ module JavaBuildpack::Container
       # Run wlst.sh to generate the domain as per the requested configurations
 
       wlstScript = Dir.glob("#{@wlsInstall}" + "/**/wlst.sh")[0]
-      system "/bin/chmod +x #{wlstScript}; export JAVA_HOME=#{@javaHome}; #{wlstScript}  #{@wlsDomainConfigScript} #{@wlsCompleteDomainConfigsProps} > #{@wlsInstall}/wlstDomainCreation.log"
+      system "/bin/chmod +x #{wlstScript}; export JAVA_HOME=#{@javaHome}; #{wlstScript}  #{@wlsDomainConfigScript} #{@wlsCompleteDomainConfigsProps} > #{@wlsSandboxRoot}/wlstDomainCreation.log"
 
-      logger.debug { "WLST finished generating domain under #{@domainHome.relative_path_from(@droplet.root)}. WLST log saved at: #{@wlsInstall}/wlstDomainCreation.log" }
+      logger.debug { "WLST finished generating domain under #{@domainHome}. WLST log saved at: #{@wlsSandboxRoot}/wlstDomainCreation.log" }
 
       linkJarsToDomain
 
       print "-----> Finished configuring WebLogic Domain under #{@domainHome.relative_path_from(@droplet.root)}.\n"
-      print "       WLST log saved at: #{@wlsInstall}/wlstDomainCreation.log\n"
+      print "       WLST log saved at: #{@wlsSandboxRoot}/wlstDomainCreation.log\n"
 
       puts "(#{(Time.now - configure_start_time).duration})"
     end
@@ -502,8 +676,8 @@ module JavaBuildpack::Container
     end
 
 
-    def download_wls
-      download(@wls_version, @wls_uri) { |file| expand file }
+    def download_and_install_wls
+      download(@wls_version, @wls_uri) { |file| install file }
     end
 
     def link_to(source, destination)
