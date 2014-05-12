@@ -392,13 +392,20 @@ module JavaBuildpack::Container
         installUsingJarOrBinary(inputFilePath)
       end
 
+      #rescue => e
+      #  logger.debug { "Problem with install: check install log under #{@wlsSandboxRoot}" }
+      #  print "       Problem with install: check install log under #{@wlsSandboxRoot}"
+      #  system "/bin/cat  #{@wlsSandboxRoot}/install.log"
+      #  raise RuntimeError, "WebLogicBuildpack-Install, error: #{e.message}", e.backtrace
+      #end
+
       puts "(#{(Time.now - expand_start_time).duration})"
     end
 
     def installUsingZip(zipFile)
 
-      print "       Expanding WebLogic from downloaded zip file: #{zipFile}\n"
-      logger.debug { "Expanding WebLogic from downloaded zip file: #{zipFile}" }
+      print "       Installing WebLogic from downloaded zip file using config script\n"
+      logger.debug { "Installing WebLogic from downloaded zip file using config script" }
 
       system "/usr/bin/unzip #{zipFile} -d #{@wlsSandboxRoot} >/dev/null"
 
@@ -447,8 +454,11 @@ module JavaBuildpack::Container
 
     def installUsingJarOrBinary(installBinaryFile)
 
-      print "      Installing WebLogic from Jar or Binary file in silent mode\n"
-      logger.debug { "Installing WebLogic from Jar or Binary file in silent mode" }
+      print "      Installing WebLogic from Jar or Binary downloaded file in silent mode\n"
+      logger.debug { "Installing WebLogic from Jar or Binary downloaded file in silent mode" }
+
+      print "      WARNING!! Installation of WebLogic Server from Jar or Binary image requires complete JDK. If install fails with JRE binary, please change buildpack to refer to full JDK installation rather than JRE and retry!!.\n"
+      logger.debug { "WARNING!! Installation of WebLogic Server from Jar or Binary image requires complete JDK. If install fails with JRE binary, please change buildpack to refer to full JDK installation rather than JRE and retry!!" }
 
       javaBinary      = Dir.glob("#{@wlsSandboxRoot}" + "/../**/" + JAVA_BINARY)[0]
       @javaHome = File.dirname(javaBinary) + "/.."
@@ -466,14 +476,14 @@ module JavaBuildpack::Container
       ## installation Failed. Exiting installation due to data validation failure.
       ## The Oracle Universal Installer failed.  Exiting.
       # So, the <APP>/.java-buildpack/weblogic/wlsInstall path wont work here
-      # Have to create the wlsInstall outside of the .java-buildpack, parallel to the app location.
-      @wlsInstall = File::absolute_path("#{@wlsSandboxRoot}/../../../wlsInstall")
+      # Have to create the wlsInstall outside of the .java-buildpack, just under the app location.
+      @wlsInstall = File::absolute_path("#{@wlsSandboxRoot}/../../wlsInstall")
 
       puts "       Warning!!! Going to install at WebLogic at : #{@wlsInstall}, would be removing old installs as well as previous oracle inventory"
       logger.debug { "Warning!!! Going to install at WebLogic at : #{@wlsInstall}, would be removing old installs as well as previous oracle inventory" }
 
-      system "rm -rf #{WLS_ORA_INV_INSTALL_PATH}"
-      system "rm -rf #{@wlsInstall}"
+      system "rm -rf #{WLS_ORA_INV_INSTALL_PATH} 2>/dev/null"
+      system "rm -rf #{@wlsInstall} 2>/dev/null"
       system "/bin/cp #{oraInstallInventorySrc} /tmp"
       system "/bin/cp #{wlsInstallResponseFileSrc} /tmp;"
 
@@ -514,7 +524,7 @@ module JavaBuildpack::Container
 
       if (installBinaryFile[/\.jar/])
         newBinaryPath="/tmp/wls_tmp_installer.jar"
-        installCommand = "export JAVA_HOME=#{@javaHome}; rm #{newBinaryPath}; ln -s #{installBinaryFile} #{newBinaryPath}; mkdir #{@wlsInstall}; #{javaBinary} -Djava.security.egd=file:/dev/./urandom -jar #{newBinaryPath} -silent -responseFile #{wlsInstallResponseFileTarget} -invPtrLoc #{oraInstallInventoryTarget}"
+        installCommand = "export JAVA_HOME=#{@javaHome}; rm #{newBinaryPath} 2>/dev/null; ln -s #{installBinaryFile} #{newBinaryPath}; mkdir #{@wlsInstall}; #{javaBinary} -Djava.security.egd=file:/dev/./urandom -jar #{newBinaryPath} -silent -responseFile #{wlsInstallResponseFileTarget} -invPtrLoc #{oraInstallInventoryTarget}"
       else
         newBinaryPath="/tmp/wls_tmp_installer.bin"
         installCommand = "export JAVA_HOME=#{@javaHome}; rm #{newBinaryPath}; ln -s #{installBinaryFile} #{newBinaryPath}; mkdir #{@wlsInstall}; chmod +x #{newBinaryPath}; #{newBinaryPath} -J-Djava.security.egd=file:/dev/./urandom -silent -responseFile #{wlsInstallResponseFileTarget} -invPtrLoc #{oraInstallInventoryTarget}"
@@ -533,6 +543,9 @@ module JavaBuildpack::Container
       configure_start_time = Time.now
 
       print "-----> Configuring WebLogic domain under #{@wlsSandboxRoot.relative_path_from(@droplet.root)}\n"
+
+      puts "wlsInstall is under: #{@wlsInstall}"
+      system "/bin/cat #{@wlsSandboxRoot}/install.log"
 
       @wlsHome = File.dirname(Dir.glob("#{@wlsInstall}/**/weblogic.jar")[0]) + "/../.."
       if (@wlsHome.nil?)
@@ -660,6 +673,12 @@ module JavaBuildpack::Container
       print "       WLST log saved at: #{@wlsSandboxRoot}/wlstDomainCreation.log\n"
 
       puts "(#{(Time.now - configure_start_time).duration})"
+
+    #rescue => e
+    #  logger.debug { "Problem with configure: check configure log under #{@wlsSandboxRoot}" }
+    #  print "       Problem with configure: check configure log under #{@wlsSandboxRoot}"
+    #  system "/bin/cat  #{@wlsSandboxRoot}/configure.log"
+    #  raise RuntimeError, "WebLogicBuildpack-Configure, error: #{e.message}", e.backtrace
     end
 
 
@@ -686,6 +705,7 @@ module JavaBuildpack::Container
         # Ignore the .java-buildpack log and .java-buildpack subdirectory containing the app server bits
         next if path.to_s[/\.java-buildpack/]
         next if path.to_s[/\.wls/]
+        next if path.to_s[/\wlsInstall/]
         (destination + path.basename).make_symlink(path.relative_path_from(destination))
       }
     end

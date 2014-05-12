@@ -146,7 +146,7 @@ A single server WebLogic Domain configuration with deployed application would be
            cutoff_age_in_days: 31
          ....
          bulk_api_password: bulk-password
-         client_max_body_size: 756M
+         client_max_body_size: 1024M
        ....
        ccng:
          app_events:
@@ -155,11 +155,13 @@ A single server WebLogic Domain configuration with deployed application would be
            cutoff_age_in_days: 31
          ....
          bulk_api_password: bulk-password
-         client_max_body_size: 756M
+         client_max_body_size: 1024M
 
 	 ```
 
      * CF Releases prior to **`v157`** used to hardcode the *`client_max_body_size`* to *256M*. So, overriding it with the manifest entry will not work unless the bosh-lite or hosting environment has been updated to *`v158`* or higher Cloud Foundry release.
+
+     * Oracle WebLogic 12c (v12.1.2) only Development release bits packaged as a zip file (under 200 MB ) can be used with just the JRE. However, full installs (over 800MB of WebLogic Server bundled with or without other products bits) in form of Jar file would require full JDK and not just JRE. All of these would affect the size of the droplet, pushing it much beyond 1GB in size which would require increased client_max_body_size settings in the above mentioned cf deployment manifest settings.
 
 ## Application configuration
 
@@ -323,7 +325,7 @@ A single server instance would be started as part of the droplet execution. The 
 
 The application can be scaled up or down using cf scale command. This would trigger multiple copies of the same droplet (identical server configuration and application bits but different server listen ports) to be executing in parallel.
 
-Note: Ensure `cf push` uses **`-m`** argument to specify a minimum process memory footprint of 1024 MB (1GB). Failure to do so will result in very small memory size for the droplet container and the jvm startup can fail.
+Note: Ensure `cf push` uses **`-m`** argument to specify a minimum process memory footprint of 1024 MB (1GB). Failure to do so will result in very small memory size for the droplet container and the jvm startup can fail. 
 
 Sample cf push: 
 
@@ -492,9 +494,15 @@ The buildpack supports configuration and extension through the use of Git reposi
 
 To learn how to configure various properties of the buildpack, follow the "Configuration" links below. More information on extending the buildpack is available [here](docs/extending.md).
 
+## Potential Issues
+
+* Oracle WebLogic 12c (v12.1.2) Development release bits containing purely WebLogic Server packaged as a zip file (under 200 MB ) can be used with just the JRE. However, full installs (over 800MB of WebLogic Server bundled with or without other products bits) in form of Jar file would require full JDK and not just JRE. The buildpack would fail during the install of the WebLogic install binaries if just used against JRE. This will also affect the size of the droplet, pushing it beyond 1GB in size. Ensure corresponding increase in the client_max_body_size settings in the cf deployment manifest.
+
+* If the application push fails during the **`Uploading droplet`** phase, either the client_max_body_size is too small or the controller managing bosh-lite is running out of disk space. Either edit the deployment manifest and redeploy to bosh or clean up the **`/var/vcap/store/10.244.0.34.xip.io-cc-droplets/`** folder contents inside the api_z1/0 instance (use bosh ssh api_z1 0 command to login into the controller).
+
 ## Limitations (as of April, 2014)
 
-* CF release version should be equal or greater than v158 to allow overriding the client_max_body_size for droplets (the default is 256MB which is too small for WebLogic droplets).
+* CF release version should be equal or greater than v158 to allow overriding the client_max_body_size for droplets (the default is 256MB which is too small for WebLogic droplets). If using a much larger binary image of the WebLogic Server (like the jar version of WebLogic and Coherence server that itself is in excess of 800 MB in size), then the the droplet size will easily exceed 1GB in addition to the JDK binaries and application bits.
 
 * Only HTTP inbound traffic is allowed. No inbound RMI communication is allowed. There cannot be any peer-to-peer communication between WebLogic Server instances.
 
@@ -537,6 +545,7 @@ This buildpack is released under version 2.0 of the [Apache License][].
 [Pivotal Web Services Marketplace]: http://docs.run.pivotal.io/marketplace/services/
 [User Provided Services]: http://docs.run.pivotal.io/devguide/services/user-provided.html
 [Linux 64 bit JRE]: http://javadl.sun.com/webapps/download/AutoDL?BundleId=83376
+[Linux 64 bit JDK]: http://download.oracle.com/otn-pub/java/jdk/7u55-b13/jdk-7u55-linux-x64.tar.gz
 [WebLogic Server]: http://www.oracle.com/technetwork/middleware/weblogic/downloads/index.html
 [limited footprint]: http://docs.oracle.com/middleware/1212/wls/START/overview.htm#START234
 [syslog drain endpoint like Splunk]: http://www.youtube.com/watch?v=rk_K_AAHEEI
