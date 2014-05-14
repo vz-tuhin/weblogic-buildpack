@@ -393,7 +393,11 @@ def deployApp(appName, appSrcPath, targetServer):
 # Create a domain from the weblogic domain template.
 #==========================================
 def createDomain(domainEnvConfig):
-  baseWLSTemplate = WL_HOME +'/common/templates/wls/wls.jar'
+
+  baseWLSTemplate = WL_HOME +'/common/templates/*/wls.jar'
+  if 'wlsDomainTemplateJar' in domainEnvConfig:
+    baseWLSTemplate = domainEnvConfig.get('wlsDomainTemplateJar')
+
   print 'Reading WLS template from : ' + baseWLSTemplate
   readTemplate(baseWLSTemplate)
   cd('Servers/AdminServer')

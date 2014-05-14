@@ -172,6 +172,12 @@ module JavaBuildpack::Container
     # Other constants
     SERVER_VM                = '-server'.freeze
     CLIENT_VM                = '-client'.freeze
+    BEA_HOME_TEMPLATE        = 'BEA_HOME="\$MW_HOME"'
+    MW_HOME_TEMPLATE         = 'MW_HOME="\$MW_HOME"'
+
+    # WLS Domain Template jar
+    WLS_DOMAIN_TEMPLATE      = 'wls.jar'.freeze
+
     WEB_INF_DIRECTORY        = 'WEB-INF'.freeze
     JAVA_BINARY              = 'java'.freeze
 
@@ -415,9 +421,8 @@ module JavaBuildpack::Container
 
       @javaHome = File.dirname(javaBinary) + "/.."
       @wlsInstall = File.dirname(configureScript)
-      @wlsHome = Dir.glob("#{@wlsInstall}/**/weblogic.jar")[0].to_s + "../.."
 
-       system "/bin/chmod +x #{configureScript}"
+      system "/bin/chmod +x #{configureScript}"
 
       # Run configure.sh so the actual files are unpacked fully and paths are configured correctly
       # Need to use pipeline as we need to provide inputs to scripts downstream
@@ -447,7 +452,10 @@ module JavaBuildpack::Container
       print "       Starting WebLogic Install\n"
       logger.debug { "Starting WebLogic Install" }
 
-      system "export JAVA_HOME=#{@javaHome}; echo no |  #{configureScript} > #{@wlsSandboxRoot}/install.log"
+      setMiddlewareHomeInConfigureScript(configureScript)
+      system "export JAVA_HOME=#{@javaHome}; export MW_HOME=#{@wlsInstall}; echo no |  #{configureScript} > #{@wlsSandboxRoot}/install.log"
+
+      print "       Finished running install, output saved at: #{@wlsSandboxRoot}/install.log"
       logger.debug { "Finished running install, output saved at: #{@wlsSandboxRoot}/install.log" }
 
     end
@@ -479,8 +487,8 @@ module JavaBuildpack::Container
       # Have to create the wlsInstall outside of the .java-buildpack, just under the app location.
       @wlsInstall = File::absolute_path("#{@wlsSandboxRoot}/../../wlsInstall")
 
-      puts "       Warning!!! Going to install at WebLogic at : #{@wlsInstall}, would be removing old installs as well as previous oracle inventory"
-      logger.debug { "Warning!!! Going to install at WebLogic at : #{@wlsInstall}, would be removing old installs as well as previous oracle inventory" }
+      puts "       Warning!!! Installing WebLogic at : #{@wlsInstall}, would be removing old installs as well as previous oracle inventory"
+      logger.debug { "Warning!!! Installing WebLogic at : #{@wlsInstall}, would be removing old installs as well as previous oracle inventory" }
 
       system "rm -rf #{WLS_ORA_INV_INSTALL_PATH} 2>/dev/null"
       system "rm -rf #{@wlsInstall} 2>/dev/null"
@@ -544,72 +552,11 @@ module JavaBuildpack::Container
 
       print "-----> Configuring WebLogic domain under #{@wlsSandboxRoot.relative_path_from(@droplet.root)}\n"
 
-      puts "wlsInstall is under: #{@wlsInstall}"
-      system "/bin/cat #{@wlsSandboxRoot}/install.log"
-
       @wlsHome = File.dirname(Dir.glob("#{@wlsInstall}/**/weblogic.jar")[0]) + "/../.."
       if (@wlsHome.nil?)
         logger.debug { "Problem with install, check captured install log output at #{@wlsInstall}/install.log" }
         print " Problem with install, check captured install log output at #{@wlsInstall}/install.log"
       end
-
-
-      #javaBinary      = Dir.glob("#{@wlsSandboxRoot}" + "/../**/" + JAVA_BINARY)[0]
-      #configureScript = Dir.glob("#{@wlsSandboxRoot}" + "/**/" + WLS_CONFIGURE_SCRIPT)[0]
-      #
-      #logger.debug { "Java Binary is located at : #{javaBinary}" }
-      #logger.debug { "WLS configure script is located at : #{configureScript}" }
-      #logger.debug { "Application is located at : #{@application.root}" }
-      #
-      #@javaHome = File.dirname(javaBinary) + "/.."
-      #@wlsInstall = File.dirname(configureScript)
-      #@wlsHome = Dir.glob("#{@wlsInstall}/wlserver*")[0].to_s
-      #
-      ## Now add or update the Domain path and Wls Home inside the wlsDomainYamlConfigFile
-      #updateDomainConfigFile(@wlsDomainYamlConfigFile)
-      #
-      #logger.debug { "Configurations for Java WLS Buildpack" }
-      #logger.debug { "--------------------------------------" }
-      #logger.debug { "  Sandbox Root  : #{@wlsSandboxRoot} " }
-      #logger.debug { "  JAVA_HOME     : #{@javaHome} " }
-      #logger.debug { "  WLS_INSTALL   : #{@wlsInstall} "}
-      #logger.debug { "  WLS_HOME      : #{@wlsHome}" }
-      #logger.debug { "  DOMAIN HOME   : #{@domainHome}" }
-      #logger.debug { "--------------------------------------" }
-      #
-      #
-      #system "/bin/chmod +x #{configureScript}"
-      #
-      ## Run configure.sh so the actual files are unpacked fully and paths are configured correctly
-      ## Need to use pipeline as we need to provide inputs to scripts downstream
-      #
-      #logger.debug { "Running configure script!!" }
-      #
-      ## Use this while running on Mac to pick the correct JDK location
-      #if mac?
-      #
-      #  print "       Warning!!! Running on Mac, cannot use linux java binaries downloaded earlier...!!\n"
-      #  print "       Trying to find local java instance on Mac\n"
-      #
-      #  logger.debug { "Warning!!! Running on Mac, cannot use linux java binaries downloaded earlier...!!" }
-      #  logger.debug { "Trying to find local java instance on Mac" }
-      #
-      #  javaBinaryLocations = Dir.glob("/Library/Java/JavaVirtualMachines/**/" + JAVA_BINARY)
-      #  javaBinaryLocations.each { |javaBinaryCandidate|
-      #
-      #    # The full installs have $JAVA_HOME/jre/bin/java path
-      #    @javaHome =  File.dirname(javaBinaryCandidate) + "/.." if javaBinaryCandidate[/jdk1.7/]
-      #  }
-      #  print "       Warning!!! Using JAVA_HOME at #{@javaHome} \n"
-      #  logger.debug { "Warning!!! Using JAVA_HOME at #{@javaHome}" }
-      #
-      #end
-      #
-      #print "       Starting WebLogic Install\n"
-      #logger.debug { "Starting WebLogic Install" }
-      #
-      #system "export JAVA_HOME=#{@javaHome}; echo no |  #{configureScript} > #{@wlsInstall}/configureRun.log"
-      #logger.debug { "Finished running configure script, output saved at #{@wlsInstall}/configureRun.log" }
 
       # Modify WLS commEnv Script to use -server rather than -client
       modifyJvmTypeInCommEnv()
@@ -617,8 +564,12 @@ module JavaBuildpack::Container
       logger.debug { "WebLogic install is located at : #{@wlsInstall}" }
       logger.debug { "Application is located at : #{@application.root}" }
 
+      # Save the location of the WLS Domain template jar file - this varies across releases
+      # 10.3.6 - under ./wlserver/common/templates/domains/wls.jar
+      # 12.1.2 - under ./wlserver/common/templates/wls/wls.jar
+      @wlsDomainTemplateJar = Dir.glob("#{@wlsInstall}/**/wls.jar")[0]
+
       # Now add or update the Domain path and Wls Home inside the wlsDomainYamlConfigFile
-      updateDomainConfigFile(@wlsDomainYamlConfigFile)
       updateDomainConfigFile(@wlsDomainYamlConfigFile)
 
       logger.debug { "Configurations for Java WLS Buildpack" }
@@ -660,10 +611,13 @@ module JavaBuildpack::Container
       logger.debug { "--------------------------------------" }
 
 
+      # Modify WLS commEnv Script to set MW_HOME variable as this is used in 10.3.x but not set within it.
+      setMiddlewareHomeInCommEnv()
+
       # Run wlst.sh to generate the domain as per the requested configurations
 
       wlstScript = Dir.glob("#{@wlsInstall}" + "/**/wlst.sh")[0]
-      system "/bin/chmod +x #{wlstScript}; export JAVA_HOME=#{@javaHome}; #{wlstScript}  #{@wlsDomainConfigScript} #{@wlsCompleteDomainConfigsProps} > #{@wlsSandboxRoot}/wlstDomainCreation.log"
+      system "/bin/chmod +x #{wlstScript}; export JAVA_HOME=#{@javaHome}; export MW_HOME=#{@wlsInstall}; #{wlstScript}  #{@wlsDomainConfigScript} #{@wlsCompleteDomainConfigsProps} > #{@wlsSandboxRoot}/wlstDomainCreation.log"
 
       logger.debug { "WLST finished generating domain under #{@domainHome}. WLST log saved at: #{@wlsSandboxRoot}/wlstDomainCreation.log" }
 
@@ -671,6 +625,14 @@ module JavaBuildpack::Container
 
       print "-----> Finished configuring WebLogic Domain under #{@domainHome.relative_path_from(@droplet.root)}.\n"
       print "       WLST log saved at: #{@wlsSandboxRoot}/wlstDomainCreation.log\n"
+
+      wlsDomainConfig = Dir.glob("#{@domainHome}/**/config.xml")[0]
+      if (wlsDomainConfig.nil?)
+        logger.debug { "Problem with domain creation!!" }
+        print " Problem with domain creation!!"
+
+        system "/bin/cat #{@wlsSandboxRoot}/wlstDomainCreation.log"
+      end
 
       puts "(#{(Time.now - configure_start_time).duration})"
 
@@ -776,12 +738,14 @@ module JavaBuildpack::Container
 
       # Remove any existing references to wlsHome or domainPath
       modified = original.gsub(/  wlsHome:.*$\n/, "")
+      modified = original.gsub(/  wlsDomainTemplateJar:.*$\n/, "")
       modified = modified.gsub(/  domainPath:.*$\n/, "")
       modified = modified.gsub(/  appName:.*$\n/, "")
       modified = modified.gsub(/  appSrcPath:.*$\n/, "")
 
       # Add new references to wlsHome and domainPath
       modified << "  wlsHome: #{@wlsHome.to_s}\n"
+      modified << "  wlsDomainTemplateJar: #{@wlsDomainTemplateJar.to_s}\n"
       modified << "  domainPath: #{@wlsDomainPath.to_s}\n"
       modified << "  appName: #{APP_NAME}\n"
       modified << "  appSrcPath: #{@domainAppsDir.to_s + "/#{APP_NAME}"}\n"
@@ -814,6 +778,47 @@ module JavaBuildpack::Container
       }
 
       logger.debug { "Modified commEnv.sh files to use '-server' vm from the default '-client' vm!!" }
+
+    end
+
+    def setMiddlewareHomeInConfigureScript(configureScript)
+
+      original = File.open(configureScript, 'r') { |f| f.read }
+
+      updatedJavaHomeEntry        = "JAVA_HOME=\"#{@javaHome}\""
+      updatedBeaHomeEntry        = "BEA_HOME=\"#{@wlsInstall}\""
+      updatedMiddlewareHomeEntry = "MW_HOME=\"#{@wlsInstall}\""
+
+      # Switch to Bash as script execution fails for those with if [[ ...]] conditions
+      # when conigure.sh script tries to check for MW_HOME/BEA_HOME...
+      shell_script_begin_marker = "#!/bin/sh"
+      bash_shell_script_marker = "#!/bin/bash"
+
+      newVariablesInsert = "#{bash_shell_script_marker}\n#{updatedJavaHomeEntry}\n#{updatedBeaHomeEntry}\n#{updatedMiddlewareHomeEntry}\n"
+
+      modified = original.gsub(/#{shell_script_begin_marker}/, newVariablesInsert)
+
+      File.open(configureScript, 'w') { |f| f.write modified }
+      logger.debug { "Modified #{configureScript} to set MW_HOME variable!!" }
+
+    end
+
+    def setMiddlewareHomeInCommEnv()
+
+      Dir.glob("#{@wlsInstall}/**/commEnv.sh").each { |commEnvScript|
+
+        original = File.open(commEnvScript, 'r') { |f| f.read }
+
+        updatedBeaHomeEntry        = "BEA_HOME=\"#{@wlsInstall}\""
+        updatedMiddlewareHomeEntry = "MW_HOME=\"#{@wlsInstall}\""
+
+        modified = original.gsub(/#{BEA_HOME_TEMPLATE}/, updatedBeaHomeEntry)
+        modified = modified.gsub(/#{MW_HOME_TEMPLATE}/, updatedMiddlewareHomeEntry)
+
+        File.open(commEnvScript, 'w') { |f| f.write modified }
+      }
+
+      logger.debug { "Modified commEnv.sh files to set MW_HOME variable!!" }
 
     end
 
