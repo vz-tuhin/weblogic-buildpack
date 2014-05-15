@@ -430,7 +430,7 @@ module JavaBuildpack::Container
       logger.debug { "Running wls config script!!" }
 
       # Use this while running on Mac to pick the correct JDK location
-      if mac?
+      if !linux?
 
         print "       Warning!!! Running on Mac, cannot use linux java binaries downloaded earlier...!!\n"
         print "       Trying to find local java instance on Mac\n"
@@ -487,8 +487,8 @@ module JavaBuildpack::Container
       # Have to create the wlsInstall outside of the .java-buildpack, just under the app location.
       @wlsInstall = File::absolute_path("#{@wlsSandboxRoot}/../../wlsInstall")
 
-      puts "       Warning!!! Installing WebLogic at : #{@wlsInstall}, would be removing old installs as well as previous oracle inventory"
-      logger.debug { "Warning!!! Installing WebLogic at : #{@wlsInstall}, would be removing old installs as well as previous oracle inventory" }
+      puts "       Installing WebLogic at : #{@wlsInstall}"
+      logger.debug { "Installing WebLogic at : #{@wlsInstall}" }
 
       system "rm -rf #{WLS_ORA_INV_INSTALL_PATH} 2>/dev/null"
       system "rm -rf #{@wlsInstall} 2>/dev/null"
@@ -505,12 +505,12 @@ module JavaBuildpack::Container
 
 
       # Use this while running on Mac to pick the correct JDK location
-      if mac?
+      if !linux?
 
-        print "       Warning!!! Running on Mac, cannot use linux java binaries downloaded earlier...!!\n"
-        print "       Trying to find local java instance on Mac\n"
+        print "       Warning!!! Running on Mac or other non-linux flavor, cannot use linux java binaries downloaded earlier...!!\n"
+        print "       Trying to find local java instance on machine\n"
 
-        logger.debug { "Warning!!! Running on Mac, cannot use linux java binaries downloaded earlier...!!" }
+        logger.debug { "Warning!!! Running on Mac or other non-linux flavor, cannot use linux java binaries downloaded earlier...!!" }
         logger.debug { "Trying to find local java instance on Mac" }
 
         javaBinaryLocations = Dir.glob("/Library/Java/JavaVirtualMachines/**/" + JAVA_BINARY)
@@ -864,19 +864,23 @@ module JavaBuildpack::Container
     end
 
     def windows?
-      (/cygwin|mswin|mingw|bccwin|wince|emx/ =~ RUBY_PLATFORM) != nil
+      (/cygwin|mswin|mingw|bccwin|wince|emx/ =~ RbConfig::CONFIG['host_os']) != nil
     end
 
     def mac?
-      (/darwin/ =~ RUBY_PLATFORM) != nil
+      (/darwin/ =~ RbConfig::CONFIG['host_os']) != nil
+    end
+
+    def sun?
+      (/sunos|solaris/ =~ RbConfig::CONFIG['host_os']) != nil
     end
 
     def unix?
-      !OS.windows?
+      !windows?
     end
 
     def linux?
-      OS.unix? and not OS.mac?
+      unix? and not mac? and not solaris?
     end
 
   end
