@@ -88,11 +88,12 @@ module JavaBuildpack::Container
 
       setupJvmArgs
       createSetupEnvAndLinksScript
+      setupMonitoringAgentScript
 
       [
           @droplet.java_home.as_env_var,
           "USER_MEM_ARGS=\"#{@droplet.java_opts.join(' ')}\"",
-          "/bin/sh ./#{SETUP_ENV_AND_LINKS_SCRIPT}; #{@domainHome}/startWebLogic.sh"
+          "/bin/sh ./#{SETUP_ENV_AND_LINKS_SCRIPT}; /bin/sh #{@dumperAgentScript}; #{@domainHome}/startWebLogic.sh"
       ].flatten.compact.join(' ')
     end
 
@@ -182,6 +183,14 @@ module JavaBuildpack::Container
     JAVA_BINARY              = 'java'.freeze
 
     APP_NAME                 = 'ROOT'.freeze
+
+    MONITORING_RESOURCE      = "monitoring".freeze
+    MONITORING_AGENT_PATH    = "agent".freeze
+    MONITORING_AGENT_SCRIPT  = "dumperAgent.sh".freeze
+
+    MONITOR_AGENT_DIR        = '.monitor'.freeze
+
+    BUILDPACK_MONITOR_AGENT_PATH = "#{BUILDPACK_WLS_CONFIG_CACHE_DIR}/#{MONITORING_RESOURCE}/#{MONITORING_AGENT_PATH}".freeze
 
 
     # @return [Hash] the configuration or an empty hash if the configuration file does not exist
@@ -374,6 +383,25 @@ module JavaBuildpack::Container
       end
 
     end
+
+    # Create a setup script that would monitor for update in access time for pre-designated target files through client action (using cf files interface)
+    # and dump threads or heap or stats as required.
+    # This script would be kicked off in the background just before server start
+    # This script is getting copied over to the $HOME directory
+    def setupMonitoringAgentScript
+
+
+      @monitorAgentRoot = "#{@application.root.to_s}/#{MONITOR_AGENT_DIR}"
+
+      system "mkdir -p #{@monitorAgentRoot} 2>/dev/null"
+      system "/bin/cp #{BUILDPACK_MONITOR_AGENT_PATH}/* #{@monitorAgentRoot}"
+
+      @dumperAgentScript = Dir.glob("#{@monitorAgentRoot}/#{MONITORING_AGENT_SCRIPT}")[0]
+
+      system "chmod +x #{@monitorAgentRoot}/*"
+
+    end
+
 
     def link_application
       FileUtils.rm_rf root
@@ -664,8 +692,9 @@ module JavaBuildpack::Container
     def link_to(source, destination)
       FileUtils.mkdir_p destination
       source.each { |path|
-        # Ignore the .java-buildpack log and .java-buildpack subdirectory containing the app server bits
+        # Ignore the .java-buildpack log and .java-buildpack subdirectory as well as .wls/.monitor and anything else not related to the app bits
         next if path.to_s[/\.java-buildpack/]
+        next if path.to_s[/\.monitor/]
         next if path.to_s[/\.wls/]
         next if path.to_s[/\wlsInstall/]
         (destination + path.basename).make_symlink(path.relative_path_from(destination))
@@ -880,7 +909,7 @@ module JavaBuildpack::Container
     end
 
     def linux?
-      unix? and not mac? and not solaris?
+      unix? and not mac? and not sun?
     end
 
   end
