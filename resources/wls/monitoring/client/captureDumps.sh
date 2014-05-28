@@ -1,19 +1,41 @@
 #!/bin/sh
 
+# Change the default as needed if CF API version changes
+CF_API_VERSION=v2
+
+# Change DUMP_FOLDER location if need to pick from a different location than /home/vcap/dumps
+# Always the file path needs to be relative to /home/vcap
+DUMP_FOLDER=dumps
+
 function checkForErrors()
 {
-  appName=$1
+  app=$1
   instanceId=$2
   dumpFile=$3
+  completeFilePath=$4
 
-  grep "Entity not found" ${appName}.${instanceId}.${dumpFile} >/dev/null
+  localDownloadedFile=${app}.${instanceId}.${dumpFile}
+  grep "Entity not found" ${localDownloadedFile} >/dev/null
   if [ $? -ne 0 ]; then
     # Save each one with app and instance id so as to avoid another instance writing empty or error files into it.
-    echo "###   Saved ${appName}.${instanceId}.${dumpFile} for instance: $instanceId of app: $appName"
+    echo "###   Saved ${localDownloadedFile} for instance: $instanceId of app: $app"
+
+    fileExtensionType=`echo ${localDownloadedFile} | awk -F . '{ print $NF}' `
+
+    if [ "$fileExtensionType" == "hprof" ]; then
+
+        # cf curl sends an additional Newline/extra character at the end of the binary data transfer
+        # Strip that as heap dump read will fail otherwise.
+        size=`ls -l $localDownloadedFile  | awk ' { print $5 }' `
+        trimmedSize=$((size-1))
+        echo "Trimming an extra character from the heap dump as it will interfere with read of the file... kindly wait!!"
+        dd if=${localDownloadedFile} bs=1 count=${trimmedSize} of=${localDownloadedFile}.new
+        mv ${localDownloadedFile}.new ${localDownloadedFile}
+    fi
   else
-    echo "ERROR!! Resource $captureDumpUrl not found"
-    echo "      on instance: $instanceId for app: $appName!"
-    rm ${appName}.${instanceId}.${dumpFile}
+    echo "ERROR!! Resource /home/vcap/$DUMP_FOLDER/$completeFilePath not found"
+    echo "      on instance: $instanceId for app: $app!"
+    rm ${app}.${instanceId}.${dumpFile}
   fi
 }
 
@@ -31,12 +53,6 @@ fi
 appName=$1
 filePath=$2
 
-# Change the default as needed if CF API version changes 
-CF_API_VERSION=v2
-
-# Change DUMP_FOLDER location if need to pick from a different location than /home/vcap/dumps  
-# Always the file path needs to be relative to /home/vcap
-DUMP_FOLDER=dumps
 
 APP_URL_PREFIX=/${CF_API_VERSION}/apps
 DUMP_URL=/files/$DUMP_FOLDER/$filePath
@@ -83,17 +99,19 @@ do
   #if [[ "$captureDumpUrl" == *hprof* ] -o [ "$captureDumpUrl" == "*.txt"]]; then
 
   dumpFile=`basename $captureDumpUrl`
+
+  #echo Going to download from  $captureDumpUrl
   # Save txt or heap dumps as separate files
   # Dump to STDOUT for just file listing or other file types.
   case "$captureDumpUrl" in
       *hprof* )
-      CF_TRACE=false cf curl $captureDumpUrl > $appName.$instanceId.$dumpFile
-      checkForErrors $appName $instanceId $dumpFile
+      CF_TRACE=false cf curl  $captureDumpUrl > $appName.$instanceId.$dumpFile
+      checkForErrors $appName $instanceId $dumpFile $filePath
       ;;
 
       *txt   )
       CF_TRACE=false cf curl $captureDumpUrl > $appName.$instanceId.$dumpFile
-      checkForErrors $appName $instanceId $dumpFile
+      checkForErrors $appName $instanceId $dumpFile $filePath
       ;;
 
       * ) echo "Listing contents of file or directory for App: $appName , for instance: $instanceId"

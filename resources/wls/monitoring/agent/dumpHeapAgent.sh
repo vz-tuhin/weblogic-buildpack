@@ -76,7 +76,7 @@ function setJavaTools()
 
 function buildJavaDumpCommand()
 {
-   export DUMP_COMMAND="$DUMP_TOOL -dump:live,format=b,file=$DUMP_FOLDER/$day/${APP_NAME}.${SERVER_PID}.${curTimestamp}.hprof $SERVER_PID"
+   export DUMP_COMMAND="$DUMP_TOOL -dump:live,format=b,file=$DUMP_FOLDER/$day/${APP_NAME}.${SERVER_PID}.${day}.${curTimestamp}.hprof $SERVER_PID"
    echo "DUMP_COMMAND is $DUMP_COMMAND"
 }
 
