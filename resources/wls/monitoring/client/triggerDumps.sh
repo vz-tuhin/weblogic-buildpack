@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/sh
 
 # Check Number of arguments
 if [ "$#" -lt 2 ]; then
@@ -51,11 +51,20 @@ fi
 #Default action is Thread Dumps
 DUMP_URL=$THREAD_DUMP_URL
 
-if [[ "$action" == *heap* ]]; then
-  DUMP_URL=$HEAP_DUMP_URL
-elif [[ "$action" == *stat* ]]; then
-  DUMP_URL=$STATS_DUMP_URL
-fi
+case "$action" in
+  *heap* )
+  action=heap
+  DUMP_URL=$HEAP_DUMP_URL;;
+
+  *stat*   )
+  action=stats
+  DUMP_URL=$STATS_DUMP_URL;;
+
+  * )
+  action=thread
+  DUMP_URL=$THREAD_DUMP_URL;;
+esac
+
 
 count=0
 for instanceId in `grep "running " $tmpFile | sed -e 's/ .*//g;s/^[^#]*#//g;s/\//g;s/\[.*//g' `

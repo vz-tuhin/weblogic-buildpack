@@ -1,3 +1,22 @@
+#!/bin/sh
+
+function checkForErrors()
+{
+  appName=$1
+  instanceId=$2
+  dumpFile=$3
+
+  grep "Entity not found" ${appName}.${instanceId}.${dumpFile} >/dev/null
+  if [ $? -ne 0 ]; then
+    # Save each one with app and instance id so as to avoid another instance writing empty or error files into it.
+    echo "###   Saved ${appName}.${instanceId}.${dumpFile} for instance: $instanceId of app: $appName"
+  else
+    echo "ERROR!! Resource $captureDumpUrl not found"
+    echo "      on instance: $instanceId for app: $appName!"
+    rm ${appName}.${instanceId}.${dumpFile}
+  fi
+}
+
 # Check Number of arguments
 if [ "$#" -lt 1 ]; then
   echo "Usage: captureDumps.sh  <appName> [path_of_file_or_directory>" 
@@ -54,14 +73,35 @@ do
   # and then choose the folder
   # Sample URL is /v2/apps/38699180-05c1-4c15-af24-f6c3fce5b1dc/instances/0/files/dumps/05_20_14/threadDump.wls12c-0.104.22_01_11.txt
   # Sample URL is /v2/apps/38699180-05c1-4c15-af24-f6c3fce5b1dc/instances/1/files/dumps/05_20_14/threadDump.wls12c-0.104.22_01_11.txt
-  captureThreadDumpsUrl="${APP_URL_PREFIX}/${appGuid}/instances/${instanceId}${DUMP_URL}"
+  captureDumpUrl="${APP_URL_PREFIX}/${appGuid}/instances/${instanceId}${DUMP_URL}"
 
   #echo Trying cf curl against $captureThreadDumpsUrl
-  echo "Listing contents of file or directory for App: $appName , for instance: $instanceId"
-  echo " (relative to /home/vcap/$DUMP_FOLDER/${filePath} )"
-  echo ""
   count=$((count+1))
-  CF_TRACE=false cf curl $captureThreadDumpsUrl
+
+  #echo url: $captureDumpUrl
+  # If this is a heap dump, save it directly to local current directory
+  #if [[ "$captureDumpUrl" == *hprof* ] -o [ "$captureDumpUrl" == "*.txt"]]; then
+
+  dumpFile=`basename $captureDumpUrl`
+  # Save txt or heap dumps as separate files
+  # Dump to STDOUT for just file listing or other file types.
+  case "$captureDumpUrl" in
+      *hprof* )
+      CF_TRACE=false cf curl $captureDumpUrl > $appName.$instanceId.$dumpFile
+      checkForErrors $appName $instanceId $dumpFile
+      ;;
+
+      *txt   )
+      CF_TRACE=false cf curl $captureDumpUrl > $appName.$instanceId.$dumpFile
+      checkForErrors $appName $instanceId $dumpFile
+      ;;
+
+      * ) echo "Listing contents of file or directory for App: $appName , for instance: $instanceId"
+          echo " (fetching from /home/vcap/$DUMP_FOLDER/${filePath} )"
+          echo ""
+          CF_TRACE=false cf curl $captureDumpUrl;;
+  esac
+
   echo ""
 done
 

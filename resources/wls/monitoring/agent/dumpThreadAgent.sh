@@ -1,5 +1,14 @@
 #!/bin/bash
 
+# Dont kick off right away
+# Ruby might get picked as the process to watch rather than java or node-js as the server is yet to start....
+DELAY_INTERVAL_BEFORE_KICKOFF=$1
+
+
+SLEEP_INTERVAL=30
+THREAD_DUMP_COLLECTION_SIZE=5
+THREAD_DUMP_COLLECTION_INTERVAL=5
+
 TARGET_ACTION=Thread
 DUMP_FILE_PREFIX=threadDump
 
@@ -10,15 +19,8 @@ mkdir -p $DUMP_FOLDER 2>/dev/null
 # The target file to monitor to kick off thread dump
 DUMP_MONITOR_TARGET="/home/vcap/tmp/dumpThread"
 
-SLEEP_INTERVAL=30
-THREAD_DUMP_COLLECTION_SIZE=5
-THREAD_DUMP_COLLECTION_INTERVAL=5
-
-# Dont kick off right away
-# Ruby might get picked as the process to watch rather than java or node-js as the server is yet to start....
-WAIT_INTERVAL_BEFORE_KICKOFF=$1
-
-function touchAndSaveTimestamp() {
+function touchAndSaveTimestamp()
+{
   `touch $DUMP_MONITOR_TARGET`
   lastSavedAccessTimestamp=`stat -c %X $DUMP_MONITOR_TARGET`
 }
@@ -29,28 +31,44 @@ function findAppLabel()
   IFS=","
   for envAppContent in `cat /home/vcap/logs/env.log`
   do
-    if [[ "$envAppContent"  == *instance_index* ]]; then
-      appInst=`echo $envAppContent | sed -e 's/\"//g;s/instance_index://g;s/^[ \t]*//;s/[ \t]*$//'`
-    elif [[ "$envAppContent"  == *application_name* ]]; then
-      appName=`echo $envAppContent | sed -e 's/\"//g;s/application_name://g;s/^[ \t]*//;s/[ \t]*$//'`
-    fi
+    #if [[ "$envAppContent"  == *instance_index* ]]; then
+    #  appInst=`echo $envAppContent | sed -e 's/\"//g;s/instance_index://g;s/^[ \t]*//;s/[ \t]*$//'`
+    #elif [[ "$envAppContent"  == *application_name* ]]; then
+    #  appName=`echo $envAppContent | sed -e 's/\"//g;s/application_name://g;s/^[ \t]*//;s/[ \t]*$//'`
+    #fi
+    case "$envAppContent" in
+      *instance_index* )
+      appInst=`echo $envAppContent | sed -e 's/\"//g;s/instance_index://g;s/^[ \t]*//;s/[ \t]*$//'`;;
+
+      *application_name* )
+      appName=`echo $envAppContent | sed -e 's/\"//g;s/application_name://g;s/^[ \t]*//;s/[ \t]*$//'`;;
+    esac
+
   done
   IFS=$old_IFS
   echo ${appName}-${appInst}
 }
 
-function findTargetType()
+#function findTargetType()
+findTargetType()
 {
   old_IFS=$IFS
   IFS=$'\n'
   appType="RUBY"
   for process in `ps aux --sort rss | tail -5`
   do
-    if [[ "$process"  == *\/java* ]]; then
-      appType="JAVA"
-    elif [[ "$process"  == *\/ruby* ]]; then
-      appType="RUBY"
-    fi
+    #if [[ "$process"  == *\/java* ]]; then
+    #  appType="JAVA"
+    #elif [[ "$process"  == *\/ruby* ]]; then
+    #  appType="RUBY"
+    #fi
+    case "$process" in
+      *\/java* )
+      appType="JAVA";;
+
+      *\/ruby* )
+      appType="RUBY";;
+    esac
   done
   IFS=$old_IFS
   echo ${appType}
@@ -64,19 +82,16 @@ function setJavaTools()
 
 }
 
-function setRubyTools() {
+function setRubyTools()
+{
    export SERVER_PID=`ps -ef | grep "bin/ruby" | grep -v "grep" | awk '{ print $2 }' `
    export DUMP_TOOL="kill -QUIT"
    export DUMP_COMMAND="$DUMP_TOOL $SERVER_PID"
-
-   #export DUMP_MEMORY_TOOL=`find / -name jmap  2>/dev/null`
-   #export DUMP_MEMORY_COMMAND="$DUMP_MEMORY_TOOL $SERVER_PID "
 }
 
-
 # Check if we have to sleep before the kick off so the server side application has started
-if [ -n "$WAIT_INTERVAL_BEFORE_KICKOFF" ]; then
-  sleep $WAIT_INTERVAL_BEFORE_KICKOFF
+if [ -n "$DELAY_INTERVAL_BEFORE_KICKOFF" ]; then
+  sleep $DELAY_INTERVAL_BEFORE_KICKOFF
 fi
 
 APP_NAME=$(findAppLabel)
