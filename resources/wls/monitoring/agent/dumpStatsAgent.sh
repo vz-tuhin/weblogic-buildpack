@@ -68,7 +68,7 @@ do
 
     curTimestamp=`date +%H_%M_%S`
     mkdir -p $DUMP_FOLDER/$day 2>/dev/null
-    dumpFile=$DUMP_FOLDER/$day/${DUMP_FILE_PREFIX}.${APP_NAME}.${curTimestamp}.txt
+    dumpFile=$DUMP_FOLDER/$day/${DUMP_FILE_PREFIX}.${APP_NAME}.${day}.${curTimestamp}.txt
 
     echo Detected $TARGET_ACTION Dump Trigger action for App: $APP_NAME
     echo Dumping $TARGET_ACTION to $dumpFile

@@ -122,14 +122,15 @@ do
     curTimestamp=`date +%H_%M_%S`
     mkdir -p $DUMP_FOLDER/$day 2>/dev/null
     echo Detected $TARGET_ACTION Dump Trigger action for App: $APP_NAME
-    echo Dumping $TARGET_ACTION to $DUMP_FOLDER/$day/${DUMP_FILE_PREFIX}.${APP_NAME}.${SERVER_PID}.${curTimestamp}.txt
-    echo "$TARGET_ACTION Dumps for Server: $APP_NAME at `date`" >> $DUMP_FOLDER/$day/${DUMP_FILE_PREFIX}.${APP_NAME}.${SERVER_PID}.${curTimestamp}.txt
+    dumpFile=$DUMP_FOLDER/$day/${DUMP_FILE_PREFIX}.${APP_NAME}.${SERVER_PID}.${day}.${curTimestamp}.txt
+    echo Dumping $TARGET_ACTION to $dumpFile
+    echo "$TARGET_ACTION Dumps for Server: $APP_NAME at `date`" >> $dumpFile
     for i in `seq 1 $THREAD_DUMP_COLLECTION_SIZE`
     do
-      $DUMP_COMMAND  >> $DUMP_FOLDER/$day/${DUMP_FILE_PREFIX}.${APP_NAME}.${SERVER_PID}.${curTimestamp}.txt
+      $DUMP_COMMAND  >> $dumpFile
       sleep $THREAD_DUMP_COLLECTION_INTERVAL
     done
-    echo "End of $TARGET_ACTION dump ........." >>  $DUMP_FOLDER/$day/${DUMP_FILE_PREFIX}.${APP_NAME}.${SERVER_PID}.${curTimestamp}.txt
+    echo "End of $TARGET_ACTION dump ........." >>  $dumpFile
     touchAndSaveTimestamp
   fi
 

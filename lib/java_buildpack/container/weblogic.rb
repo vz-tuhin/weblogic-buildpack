@@ -93,7 +93,7 @@ module JavaBuildpack::Container
       [
           @droplet.java_home.as_env_var,
           "USER_MEM_ARGS=\"#{@droplet.java_opts.join(' ')}\"",
-          "/bin/sh ./#{SETUP_ENV_AND_LINKS_SCRIPT}; /bin/sh #{@dumperAgentScript}; #{@domainHome}/startWebLogic.sh"
+          "/bin/sh ./#{SETUP_ENV_AND_LINKS_SCRIPT}; /bin/sh #{@dumperAgentScript} ; #{@domainHome}/startWebLogic.sh"
       ].flatten.compact.join(' ')
     end
 

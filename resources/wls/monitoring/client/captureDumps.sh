@@ -7,35 +7,36 @@ CF_API_VERSION=v2
 # Always the file path needs to be relative to /home/vcap
 DUMP_FOLDER=dumps
 
-function checkForErrors()
+function checkForErrorsAndSave()
 {
   app=$1
   instanceId=$2
-  dumpFile=$3
-  completeFilePath=$4
+  tmpDumpFile=$3
+  realDumpFile=$4
+  completeFilePath=$5
 
-  localDownloadedFile=${app}.${instanceId}.${dumpFile}
-  grep "Entity not found" ${localDownloadedFile} >/dev/null
+  grep "Entity not found" ${tmpDumpFile} >/dev/null
   if [ $? -ne 0 ]; then
     # Save each one with app and instance id so as to avoid another instance writing empty or error files into it.
-    echo "###   Saved ${localDownloadedFile} for instance: $instanceId of app: $app"
+    mv ${tmpDumpFile} ${realDumpFile}
+    echo "###   Saved ${realDumpFile} for instance: $instanceId of app: $app"
 
-    fileExtensionType=`echo ${localDownloadedFile} | awk -F . '{ print $NF}' `
+    fileExtensionType=`echo ${realDumpFile} | awk -F . '{ print $NF}' `
 
     if [ "$fileExtensionType" == "hprof" ]; then
 
         # cf curl sends an additional Newline/extra character at the end of the binary data transfer
         # Strip that as heap dump read will fail otherwise.
-        size=`ls -l $localDownloadedFile  | awk ' { print $5 }' `
+        size=`ls -l $realDumpFile  | awk ' { print $5 }' `
         trimmedSize=$((size-1))
         echo "Trimming an extra character from the heap dump as it will interfere with read of the file... kindly wait!!"
-        dd if=${localDownloadedFile} bs=1 count=${trimmedSize} of=${localDownloadedFile}.new
-        mv ${localDownloadedFile}.new ${localDownloadedFile}
+        dd if=${realDumpFile} bs=1 count=${trimmedSize} of=${realDumpFile}.new
+        mv ${realDumpFile}.new ${realDumpFile}
     fi
   else
     echo "ERROR!! Resource /home/vcap/$DUMP_FOLDER/$completeFilePath not found"
     echo "      on instance: $instanceId for app: $app!"
-    rm ${app}.${instanceId}.${dumpFile}
+    rm ${tmpDumpFile}
   fi
 }
 
@@ -98,20 +99,22 @@ do
   # If this is a heap dump, save it directly to local current directory
   #if [[ "$captureDumpUrl" == *hprof* ] -o [ "$captureDumpUrl" == "*.txt"]]; then
 
-  dumpFile=`basename $captureDumpUrl`
+  realDumpFile=`basename $captureDumpUrl`
+  tmpDumpFile=${realDumpFile}.tmp
 
   #echo Going to download from  $captureDumpUrl
   # Save txt or heap dumps as separate files
   # Dump to STDOUT for just file listing or other file types.
+  # Save the file first as a .tmp and then rename it if its without errors..
   case "$captureDumpUrl" in
       *hprof* )
-      CF_TRACE=false cf curl  $captureDumpUrl > $appName.$instanceId.$dumpFile
-      checkForErrors $appName $instanceId $dumpFile $filePath
+      CF_TRACE=false cf curl  $captureDumpUrl > $tmpDumpFile
+      checkForErrorsAndSave $appName $instanceId $tmpDumpFile $realDumpFile $filePath
       ;;
 
       *txt   )
-      CF_TRACE=false cf curl $captureDumpUrl > $appName.$instanceId.$dumpFile
-      checkForErrors $appName $instanceId $dumpFile $filePath
+      CF_TRACE=false cf curl $captureDumpUrl > $tmpDumpFile
+      checkForErrorsAndSave $appName $instanceId $tmpDumpFile $realDumpFile $filePath
       ;;
 
       * ) echo "Listing contents of file or directory for App: $appName , for instance: $instanceId"
