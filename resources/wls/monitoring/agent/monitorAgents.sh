@@ -1,6 +1,6 @@
 #!/bin/bash
 
-TARGET_DIR=$(dirname $0)
+TARGET_DIR=$(cd $(dirname $0) && pwd)
 
 AGENT_TYPES_ARRAY=("Heap Stats Thread")
 AGENT_PID_ARRAY=""

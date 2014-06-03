@@ -61,7 +61,16 @@ DUMP_URL=/files/$DUMP_FOLDER/$filePath
 tmpFile=`mktemp -t cfApp.${appName}.xxxx`
 
 #echo TempFile is $tmpFile
-CF_TRACE=true cf app $appName >& $tmpFile
+
+# The running instances id comes with special characters to make them appear with color like:
+#
+#^[[1;38m^[[0m  ^[[1;38mstate^[[0m  ^[[1;38msince^[[0m    ^[[1;38mcpu^[[0m  ^[[1;38mmemory^[[0m  ^[[1;38mdisk^[[0m······
+#^[[1;36m#0^[[0m   running   2014-05-14 02:16:55 PM   0.5%   531.4M of 1G   0 of 1G···
+#^[[1;36m#1^[[0m   running   2014-05-20 12:44:53 PM   1.0%   560.9M of 1G   0 of 1G···
+# So the character  is a ctrl-[ character, not just a ^ followed by [, so removal of [ and ^ separately wont work
+# Need to use more complex pattern to strip the color grep "running " $tmpFile | sed -e 's/ .*//g;s/^[^#]*#//g;s/\[.*//g;s///g'
+# Use CF_COLOR=false to avoid this headache
+CF_TRACE=true CF_COLOR=false cf app $appName >& $tmpFile
 
 
 appGuid=`grep summary $tmpFile | sed -e 's/summary.*//g;s/GET .*apps//g;s/\///g;' ` 
@@ -73,16 +82,10 @@ if [ "$appGuid" == "" ]; then
   exit -1
 fi
 
-# The running instances id comes with special characters to make them appear with color like: A
-#`grep "running " $tmpFile | sed -e 's/ .*//g;s/^[^#]*#//g;s/\[.*//g;s///g' > /tmp/foo`
-#
-#^[[1;38m^[[0m  ^[[1;38mstate^[[0m  ^[[1;38msince^[[0m    ^[[1;38mcpu^[[0m  ^[[1;38mmemory^[[0m  ^[[1;38mdisk^[[0m······
-#^[[1;36m#0^[[0m   running   2014-05-14 02:16:55 PM   0.5%   531.4M of 1G   0 of 1G···
-#^[[1;36m#1^[[0m   running   2014-05-20 12:44:53 PM   1.0%   560.9M of 1G   0 of 1G···
-# So the character  is a ctrl-[ character, not just a ^ followed by [, so removal of [ and ^ separately wont work
 
 count=0
-for instanceId in `grep "running " $tmpFile | sed -e 's/ .*//g;s/^[^#]*#//g;s/\[.*//g;s///g' `
+
+for instanceId in `grep "running " $tmpFile | sed -e 's/ .*//g;s/#//g' `
 do
   #echo "InstanceId is ${instanceId}"
 

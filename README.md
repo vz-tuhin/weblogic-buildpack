@@ -488,6 +488,16 @@ One can also modify the domain creation script to lock down or block access to t
  The Cloud Foundry services that are injected as part of the registered Service Bindings for the application would still be used to create related services during application deployment.
  The Domain Administrators are expected to use the Service Bindings to manage/control the services that are exposed to the application as it moves through various stages (Dev, Test, PreProd, Prod).
 
+
+## Remote Triggering of Thread Dumps, Stats and Heap from App Instances
+
+The WebLogic Buildpack kicks off background scripts that can pick trigger signals received via cf files in form of access of a designated target file to kick off the data collection.
+The sample scripts are packaged under the resources/wls/monitoring folder.
+
+Check the [Remote Diagnostics for Applications][] blog post for more details. Also refer to the [Monitoring](docs\container-wls-monitoring.md) documentation.
+Sample bundled scripts (under resources\wls\monitoring) can be used to trigger thread or heap dumps as well as collect system statistics/metrics across all instances of the deployed application.
+
+
 ## Configuration and Extension
 
 The buildpack supports configuration and extension through the use of Git repository forking.  The easiest way to accomplish this is to use [GitHub's forking functionality][] to create a copy of this repository.  Make the required configuration and extension changes in the copy of the repository.  Then specify the URL of the new repository when pushing Cloud Foundry applications.  If the modifications are generally applicable to the Cloud Foundry community, please submit a [pull request][] with the changes.
@@ -549,7 +559,7 @@ This buildpack is released under version 2.0 of the [Apache License][].
 [WebLogic Server]: http://www.oracle.com/technetwork/middleware/weblogic/downloads/index.html
 [limited footprint]: http://docs.oracle.com/middleware/1212/wls/START/overview.htm#START234
 [syslog drain endpoint like Splunk]: http://www.youtube.com/watch?v=rk_K_AAHEEI
-
+[Remote Diagnostics for Applications]: http://blog.gopivotal.com/cloud-foundry-pivotal/products/remote-triggers-for-applications-on-cloud-foundry
 =======
 weblogic-buildpack
 ==================
