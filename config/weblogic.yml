@@ -20,7 +20,7 @@
 
 version: 12.1.+
 #repository_root: "{default.repository.root}/weblogic"
-repository_root: "http://54.76.124.143:7777/wls"
+repository_root: "http://192.168.1.2/fileserver/wls1212_dev.zip"
 #repository_root: "https://s3.amazonaws.com/pcf-resources/wls"
 
 # preferAppConfig - Use the App bundled configs over the buildpack bundled configs?
