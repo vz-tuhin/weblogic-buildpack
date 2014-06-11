@@ -115,10 +115,44 @@ Finished capture of directory/file contents for App: 'wls12c', with # of running
 
 The capture script goes against each individual running application instance and it might report error for some files as the files are generated with instance id.
 
+Its also possible to use wildcard character with the captureDump script so one can request for thread*, or heap* or stats* and get the most recent (last file matching the given pattern) to be retrieved from the different instances that match the given pattern and path.
+
+```
+hammerkop:workspace sparameswaran$ ./captureDumps.sh wls12c 06_11_14/threadDump.wl*
+Checking Instance Index: 0 of app: wls12c
+Complete url: /v2/apps/ed16145c-81d3-4059-ab0e-c15fcf9d250f/instances/0/files/dumps/06_11_14/threadDump.wls12c-0.108.06_11_14.01_55_23.txt
+Saved curl output in threadDump.wls12c-0.108.06_11_14.01_55_23.txt.tmp...
+CompleteFilePath: 06_11_14/threadDump.wl*
+###   Saved threadDump.wls12c-0.108.06_11_14.01_55_23.txt for instance: 0 of app: wls12c
+
+Checking Instance Index: 1 of app: wls12c
+Complete url: /v2/apps/ed16145c-81d3-4059-ab0e-c15fcf9d250f/instances/1/files/dumps/06_11_14/threadDump.wls12c-1.108.06_11_14.01_55_23.txt
+Saved curl output in threadDump.wls12c-1.108.06_11_14.01_55_23.txt.tmp...
+CompleteFilePath: 06_11_14/threadDump.wl*
+###   Saved threadDump.wls12c-1.108.06_11_14.01_55_23.txt for instance: 1 of app: wls12c
+
+Finished capture of directory/file contents for App: 'wls12c', with # of running instances: 2
+
+hammerkop:workspace sparameswaran$ ./captureDumps.sh wls12c 06_11_14/stats.wls12c*
+Checking Instance Index: 0 of app: wls12c
+Complete url: /v2/apps/ed16145c-81d3-4059-ab0e-c15fcf9d250f/instances/0/files/dumps/06_11_14/stats.wls12c-0.06_11_14.02_01_20.txt
+Saved curl output in stats.wls12c-0.06_11_14.02_01_20.txt.tmp...
+CompleteFilePath: 06_11_14/stats.wls12c*
+###   Saved stats.wls12c-0.06_11_14.02_01_20.txt for instance: 0 of app: wls12c
+
+Checking Instance Index: 1 of app: wls12c
+Complete url: /v2/apps/ed16145c-81d3-4059-ab0e-c15fcf9d250f/instances/1/files/dumps/06_11_14/stats.wls12c-1.06_11_14.02_01_20.txt
+Saved curl output in stats.wls12c-1.06_11_14.02_01_20.txt.tmp...
+CompleteFilePath: 06_11_14/stats.wls12c*
+###   Saved stats.wls12c-1.06_11_14.02_01_20.txt for instance: 1 of app: wls12c
+
+Finished capture of directory/file contents for App: 'wls12c', with # of running instances: 2
+```
+
 #Note:
 Heap Dumps generated for Java Applications can be downloaded remotely using the capture script similar to the thread dumps.
-As cf curl cli actually adds a newline character as part of the final output, the heap dump can appear corrupted when reading it with Java Heap Analyzers like Eclipse MAT tool.
-So, the script automatically stripts off the last byte from the saved output which can take sometime to complete.
+cf curl cli version prior to 6.1.2 adds a newline character as part of the final output, the heap dump can appear corrupted when reading it with Java Heap Analyzers like Eclipse MAT tool. So, the script automatically stripts off the last byte from the saved output which can take sometime to complete.
+Version 6.1.2 and newer allows --output option to save the output as a file and does not require this stripping of the last unneeded byte.
 
 # Default Actions
 

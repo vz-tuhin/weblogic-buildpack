@@ -510,6 +510,62 @@ To learn how to configure various properties of the buildpack, follow the "Confi
 
 * If the application push fails during the **`Uploading droplet`** phase, either the client_max_body_size is too small or the controller managing bosh-lite is running out of disk space. Either edit the deployment manifest and redeploy to bosh or clean up the **`/var/vcap/store/10.244.0.34.xip.io-cc-droplets/`** folder contents inside the api_z1/0 instance (use bosh ssh api_z1 0 command to login into the controller).
 
+* If download of the JDK/JRE or WLS binaries fails during the compile stage or if it reports of `EROFS: Read-only file system`, it would mean the complete url to the binary is missing and the buildpack is attempting to load it from within the DEA whichw ould fail. 
+
+Complete stack trace:
+```
+-----> Downloaded app package (40K) 
+-----> WebLogic Buildpack Version: unknown 
+[Buildpack] ERROR Compile failed with exception #
+<Errno::EROFS: Read-only file system - /var/vcap/data/dea_next/admin_buildpacks/3a047ff3-c03c-4313-a2df-9ade25469cd0_0c84eb7cdd9b94656fb4c4b8dd6f4018d81db399/resources/cache> 
+Read-only file system - /var/vcap/data/dea_next/admin_buildpacks/3a047ff3-c03c-4313-a2df-9ade25469cd0_0c84eb7cdd9b94656fb4c4b8dd6f4018d81db399/resources/cache 
+/var/vcap/packages/dea_next/buildpacks/lib/installer.rb:19:in `compile': Buildpack compilation step failed: (RuntimeError) 
+from /var/vcap/packages/dea_next/buildpacks/lib/buildpack.rb:74:in `block in compile_with_timeout' 
+from /usr/lib/ruby/1.9.1/timeout.rb:68:in `timeout' 
+from /var/vcap/packages/dea_next/buildpacks/lib/buildpack.rb:73:in `compile_with_timeout' 
+from /var/vcap/packages/dea_next/buildpacks/lib/buildpack.rb:54:in `block in stage_application' 
+from /var/vcap/packages/dea_next/buildpacks/lib/buildpack.rb:50:in `chdir' 
+from /var/vcap/packages/dea_next/buildpacks/lib/buildpack.rb:50:in `stage_application'
+from /var/vcap/packages/dea_next/buildpacks/bin/run:10:in `<main>' 
+-----> Downloading Oracle JRE 1.7.0_60 from jre-7u60-linux-x64.gz 
+```
+
+Ensure the index.yml files for the jdk or weblogic binaries has the complete url including the host and protocol scheme specified:
+      ```
+        ---
+          1.7.0_51: http://12.1.1.1:7777/fileserver/jdk/jre-7u51-linux-x64.tar.gz
+      ```
+
+      ```
+        ---
+          12.1.2: http://12.1.1.1:7777/fileserver/wls/wls1212_dev.zip
+      ```
+* If the detect fails right away with Psych:SyntaxError messages, problem could be caused by commented portions interrupting the Ruby Psych parsing logic
+Remove or move the commented portions out of the valid sequence - so the jdk or java containers does not hit this error.
+Might be caused by the commented entries inside the config/components.yml file for frameworks or containers 
+
+Error Description
+
+```
+-----> Downloaded app package (88K)
+Cloning into '/tmp/buildpacks/weblogic-buildpack'...
+-----> WebLogic Buildpack Version: 195519b | https://.../weblogic-buildpack
+/usr/lib/ruby/1.9.1/psych.rb:203:in `parse': (#<File:0x0000000125c5a0>): mapping values are not allowed in this context at line 2 column 13 (Psych::SyntaxError)
+  from /usr/lib/ruby/1.9.1/psych.rb:203:in `parse_stream'
+  from /usr/lib/ruby/1.9.1/psych.rb:151:in `parse'
+  from /usr/lib/ruby/1.9.1/psych.rb:127:in `load'
+  from /usr/lib/ruby/1.9.1/psych.rb:297:in `block in load_file'
+  from /usr/lib/ruby/1.9.1/psych.rb:297:in `open'
+  from /usr/lib/ruby/1.9.1/psych.rb:297:in `load_file'
+  from /tmp/buildpacks/weblogic-buildpack/lib/java_buildpack/repository/repository_index.rb:42:in `block in initialize'
+  from /tmp/buildpacks/weblogic-buildpack/lib/java_buildpack/util/cache/cached_file.rb:51:in `call'
+  from /tmp/buildpacks/weblogic-buildpack/lib/java_buildpack/util/cache/cached_file.rb:51:in `block in cached'
+  from /tmp/buildpacks/weblogic-buildpack/lib/java_buildpack/util/cache/cached_file.rb:51:in `open'
+  from /tmp/buildpacks/weblogic-buildpack/lib/java_buildpack/util/cache/cached_file.rb:51:in `open'
+  from /tmp/buildpacks/weblogic-buildpack/lib/java_buildpack/util/cache/cached_file.rb:51:in `cached'
+  from /tmp/buildpacks/weblogic-buildpack/lib/java_buildpack/util/cache/download_cache.rb:66:in `get'
+```
+
 ## Limitations (as of April, 2014)
 
 * CF release version should be equal or greater than v158 to allow overriding the client_max_body_size for droplets (the default is 256MB which is too small for WebLogic droplets). If using a much larger binary image of the WebLogic Server (like the jar version of WebLogic and Coherence server that itself is in excess of 800 MB in size), then the the droplet size will easily exceed 1GB in addition to the JDK binaries and application bits.

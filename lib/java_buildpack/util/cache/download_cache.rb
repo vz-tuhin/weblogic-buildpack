@@ -62,7 +62,7 @@ module JavaBuildpack
           cached_file, downloaded = from_mutable_cache uri if InternetAvailability.instance.available?
           cached_file, downloaded = from_immutable_caches(uri), false unless cached_file
 
-          fail "Unable to find cached file for #{uri}" unless cached_file
+          fail "Unable to find cached file for #{uri}, check url has complete endpoints(http/https)!!" unless cached_file
           cached_file.cached(File::RDONLY, downloaded, &block)
         end
 
@@ -177,7 +177,7 @@ module JavaBuildpack
           cached      = update URI(uri), cached_file
           [cached_file, cached]
         rescue => e
-          @logger.warn { "Unable to download #{uri} into cache #{@mutable_cache_root}: #{e.message}" }
+          @logger.warn { "Unable to download #{uri} into cache #{@mutable_cache_root}: #{e.message}, check url has complete endpoints(http/https)!! " }
           nil
         end
 

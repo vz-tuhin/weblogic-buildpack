@@ -1,5 +1,7 @@
 #!/bin/sh
 
+#set -xv
+
 # Change the default as needed if CF API version changes
 CF_API_VERSION=v2
 
@@ -7,7 +9,28 @@ CF_API_VERSION=v2
 # Always the file path needs to be relative to /home/vcap
 DUMP_FOLDER=dumps
 
-function checkForErrorsAndSave()
+
+#Check version of cf cli
+#Version 6.1.2+ allows --output option to save the output to a file
+# and also does not carry any extra bytes (newline...)
+#Otherwise would have to redirect output and then trim extra byte for Heap Dump hprof files
+
+USE_REDIRECT=true
+STRIP_BYTE_FROM_BINARY=true
+
+function checkCFVersion()
+{
+  cf_version=`cf -v | awk '{print $3 }' | sed -e 's/-.*$//;s/\.//g'`
+  if [ "$cf_version" -ge 612 ]; then
+    # We are good to use the --output option to save the files directly
+    USE_REDIRECT=false
+    STRIP_BYTE_FROM_BINARY=false
+  fi
+
+}
+
+
+function checkForStrippingExtraBytes()
 {
   app=$1
   instanceId=$2
@@ -15,30 +38,108 @@ function checkForErrorsAndSave()
   realDumpFile=$4
   completeFilePath=$5
 
-  grep "Entity not found" ${tmpDumpFile} >/dev/null
-  if [ $? -ne 0 ]; then
-    # Save each one with app and instance id so as to avoid another instance writing empty or error files into it.
-    mv ${tmpDumpFile} ${realDumpFile}
-    echo "###   Saved ${realDumpFile} for instance: $instanceId of app: $app"
+  echo "CompleteFilePath: $completeFilePath"
 
-    fileExtensionType=`echo ${realDumpFile} | awk -F . '{ print $NF}' `
+  # Save each one with app and instance id so as to avoid another instance writing empty or error files into it.
+  mv ${tmpDumpFile} ${realDumpFile}
+  echo "###   Saved ${realDumpFile} for instance: $instanceId of app: $app"
 
-    if [ "$fileExtensionType" == "hprof" ]; then
+  fileExtensionType=`echo ${realDumpFile} | awk -F . '{ print $NF}' `
 
-        # cf curl sends an additional Newline/extra character at the end of the binary data transfer
-        # Strip that as heap dump read will fail otherwise.
-        size=`ls -l $realDumpFile  | awk ' { print $5 }' `
-        trimmedSize=$((size-1))
-        echo "Trimming an extra character from the heap dump as it will interfere with read of the file... kindly wait!!"
-        dd if=${realDumpFile} bs=1 count=${trimmedSize} of=${realDumpFile}.new
-        mv ${realDumpFile}.new ${realDumpFile}
-    fi
-  else
-    echo "ERROR!! Resource /home/vcap/$DUMP_FOLDER/$completeFilePath not found"
-    echo "      on instance: $instanceId for app: $app!"
-    rm ${tmpDumpFile}
+  if [ "$STRIP_BYTE_FROM_BINARY" == "true" -a "$fileExtensionType" == "hprof" ]; then
+
+      # cf curl sends an additional Newline/extra character at the end of the binary data transfer
+      # Strip that as heap dump read will fail otherwise.
+      size=`ls -l $realDumpFile  | awk ' { print $5 }' `
+      trimmedSize=$((size-1))
+      echo "Trimming an extra character from the heap dump as it will interfere with read of the file... kindly wait!!"
+      dd if=${realDumpFile} bs=1 count=${trimmedSize} of=${realDumpFile}.new
+      mv ${realDumpFile}.new ${realDumpFile}
   fi
 }
+
+function downloadDirListing()
+{
+  captureDumpUrl=$1
+  tmpDumpDirList=$2
+  CF_TRACE=false cf curl $captureDumpUrl > $tmpDumpDirList
+}
+
+function downloadFile()
+{
+  captureDumpUrl=$1
+  givenFilePath=$2
+
+  realDumpFile=`basename $captureDumpUrl`
+  tmpDumpFile=${realDumpFile}.tmp
+  tmpDumpErrorFile=${realDumpFile}.err
+
+  echo "Complete url: $captureDumpUrl"
+
+  # echo Going to download from  $captureDumpUrl
+
+  # Save txt or heap dumps as separate files
+  # Save the file first as a .tmp and then rename it if its without errors..
+  if [ "$USE_REDIRECT" == "true" ]; then
+    CF_TRACE=false cf curl  $captureDumpUrl > $tmpDumpFile
+  else
+    CF_TRACE=false cf curl  $captureDumpUrl --output $tmpDumpFile 
+  fi
+
+  echo "Saved curl output in $tmpDumpFile..."
+
+  grep "Entity not found" ${tmpDumpFile} >/dev/null
+  if [ "$?" == "0" ]; then
+    echo "ERROR!! Resource /home/vcap/$DUMP_FOLDER/$givenFilePath not found"
+    echo "      on instance: $instanceId for app: $appName!"
+    rm ${tmpDumpFile}
+  else
+    checkForStrippingExtraBytes $appName $instanceId $tmpDumpFile $realDumpFile $givenFilePath
+  fi
+}
+
+function checkAndDownloadMatchingFile()
+{
+  captureDumpUrl=$1
+  # Get the type of the resource - thread/heap/stats... as the matching pattern
+  realDumpFilePattern=`basename $captureDumpUrl | cut -d'*' -f1`
+  parentDumpDir=`dirname $captureDumpUrl`
+
+  tmpDumpDir=tmpDumpDirContent.tmp
+  $(downloadDirListing $parentDumpDir $tmpDumpDir)
+
+  # Get only the last matching entry rather than every entry...
+  matchingFileName=`grep $realDumpFilePattern $tmpDumpDir | tail -1 | awk '{print $1 }' `
+
+  completeFileUrl=${parentDumpDir}/${matchingFileName}
+  downloadFile $completeFileUrl  $targetFilePath
+
+  rm $tmpDumpDir
+}
+
+
+function checkAndDownload()
+{
+  downloadFilePath=$1
+
+  echo $downloadFilePath | egrep "\*$|hprof$|txt$" > /dev/null
+  if [ "$?" == "0" ]; then
+      # Check for patterns and if so, try to get directory listing followed by actual matching file downloads.
+      echo $downloadFilePath|grep "\*" > /dev/null
+      if [ "$?" == "0" ]; then
+        checkAndDownloadMatchingFile $downloadFilePath
+      else
+        # Directly download the file
+        downloadFile $downloadFilePath $targetFilePath
+      fi
+  else
+    tmpDumpDir=tmpDumpDirContent.tmp
+    downloadDirListing $downloadFilePath $tmpDumpDir
+    cat $tmpDumpDirList
+    rm $tmpDumpDirList
+  fi
+}
+
 
 # Check Number of arguments
 if [ "$#" -lt 1 ]; then
@@ -52,11 +153,11 @@ fi
 
 
 appName=$1
-filePath=$2
+targetFilePath=$2
 
 
 APP_URL_PREFIX=/${CF_API_VERSION}/apps
-DUMP_URL=/files/$DUMP_FOLDER/$filePath
+DUMP_URL=/files/$DUMP_FOLDER/$targetFilePath
 
 tmpFile=`mktemp -t cfApp.${appName}.xxxx`
 
@@ -83,7 +184,9 @@ if [ "$appGuid" == "" ]; then
 fi
 
 
+
 count=0
+checkCFVersion
 
 for instanceId in `grep "running " $tmpFile | sed -e 's/ .*//g;s/#//g' `
 do
@@ -95,36 +198,12 @@ do
   # Sample URL is /v2/apps/38699180-05c1-4c15-af24-f6c3fce5b1dc/instances/1/files/dumps/05_20_14/threadDump.wls12c-0.104.22_01_11.txt
   captureDumpUrl="${APP_URL_PREFIX}/${appGuid}/instances/${instanceId}${DUMP_URL}"
 
-  #echo Trying cf curl against $captureThreadDumpsUrl
-  count=$((count+1))
 
   #echo url: $captureDumpUrl
-  # If this is a heap dump, save it directly to local current directory
-  #if [[ "$captureDumpUrl" == *hprof* ] -o [ "$captureDumpUrl" == "*.txt"]]; then
+  echo "Checking Instance Index: $count of app: $appName"
+  checkAndDownload $captureDumpUrl
 
-  realDumpFile=`basename $captureDumpUrl`
-  tmpDumpFile=${realDumpFile}.tmp
-
-  #echo Going to download from  $captureDumpUrl
-  # Save txt or heap dumps as separate files
-  # Dump to STDOUT for just file listing or other file types.
-  # Save the file first as a .tmp and then rename it if its without errors..
-  case "$captureDumpUrl" in
-      *hprof* )
-      CF_TRACE=false cf curl  $captureDumpUrl > $tmpDumpFile
-      checkForErrorsAndSave $appName $instanceId $tmpDumpFile $realDumpFile $filePath
-      ;;
-
-      *txt   )
-      CF_TRACE=false cf curl $captureDumpUrl > $tmpDumpFile
-      checkForErrorsAndSave $appName $instanceId $tmpDumpFile $realDumpFile $filePath
-      ;;
-
-      * ) echo "Listing contents of file or directory for App: $appName , for instance: $instanceId"
-          echo " (fetching from /home/vcap/$DUMP_FOLDER/${filePath} )"
-          echo ""
-          CF_TRACE=false cf curl $captureDumpUrl;;
-  esac
+  count=$((count+1))
 
   echo ""
 done

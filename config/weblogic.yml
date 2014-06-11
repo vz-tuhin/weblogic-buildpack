@@ -21,6 +21,7 @@
 version: 12.1.+
 #repository_root: "{default.repository.root}/weblogic"
 repository_root: "http://12.1.1.1:7777/fileserver/wls"
+#repository_root: "https://s3.amazonaws.com/pcf-resources/wls"
 
 # preferAppConfig - Use the App bundled configs over the buildpack bundled configs?
 # If set to true, all configs and scripts packaged with the app bundle will be used for domain and server creation.
